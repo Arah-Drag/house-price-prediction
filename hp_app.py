@@ -1,161 +1,98 @@
+# hp_app.py (updated to load pipeline_model.pkl)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import datetime
 
-# ------------------------------------------
-# Load model and encoders
-# ------------------------------------------
+# Load pipeline and location list
 try:
-    model = joblib.load("house_price_model.pkl")
-    encoders = joblib.load("encoders.pkl")
+    pipeline = joblib.load("pipeline_model.pkl")
+    top_locations = joblib.load("location_topk.pkl")
     feature_names = joblib.load("feature_names.pkl")
 except Exception as e:
-    st.error(f"❌ Required files not found: {e}")
+    st.error(f"Required files not found: {e}")
     st.stop()
 
-# ------------------------------------------
-# Page Configuration
-# ------------------------------------------
-st.set_page_config(page_title="🏠 House Price DSS", layout="wide")
-st.title("🏠 AI-powered House Price Prediction DSS")
-st.write("An intelligent Decision Support System (DSS) for property price forecasting using Machine Learning and AI Chatbot support.")
+st.set_page_config(page_title="🏠 Bengaluru House Price DSS", layout="wide")
+st.title("🏠 Bengaluru House Price Prediction DSS")
 
-# ------------------------------------------
-# Sidebar Inputs
-# ------------------------------------------
-st.sidebar.header("🔧 Enter Property Details")
+# Sidebar inputs
+st.sidebar.header("Enter property details")
+# Use top_locations for dropdown
+loc = st.sidebar.selectbox("Location (area)", top_locations + ['other'])
+area_type = st.sidebar.selectbox("Area Type", ['Super built-up  Area','Built-up  Area','Carpet  Area','Plot  Area'])
+size = st.sidebar.text_input("Size (e.g. 2 BHK)", "2 BHK")
+total_sqft = st.sidebar.text_input("Total sqft (e.g. 1050 or 1050 - 1200)", "1050")
+bath = st.sidebar.number_input("Bath", min_value=0, max_value=10, value=2)
+balcony = st.sidebar.number_input("Balcony", min_value=0, max_value=5, value=1)
 
-inputs = {}
-
-# Example dropdowns — replace with your dataset’s unique values for realism
-suburbs = ["Richmond", "Abbotsford", "Carlton", "Fitzroy", "Melbourne"]
-types = ["h", "u", "t"]
-methods = ["S", "SP", "VB", "PI"]
-sellergs = ["Biggin", "Nelson", "Jellis", "Hocking"]
-council_areas = ["Yarra", "Melbourne City", "Moreland", "Darebin"]
-regions = ["Northern Metropolitan", "Southern Metropolitan", "Eastern Metropolitan"]
-
-inputs['Suburb'] = st.sidebar.selectbox("Suburb", suburbs)
-inputs['Type'] = st.sidebar.selectbox("Type (h/u/t)", types)
-inputs['Method'] = st.sidebar.selectbox("Sale Method", methods)
-inputs['SellerG'] = st.sidebar.selectbox("Seller Group", sellergs)
-inputs['CouncilArea'] = st.sidebar.selectbox("Council Area", council_areas)
-inputs['Regionname'] = st.sidebar.selectbox("Region Name", regions)
-
-inputs['Rooms'] = st.sidebar.number_input("Rooms", 1, 10, 3)
-inputs['Bedroom2'] = st.sidebar.number_input("Bedrooms", 1, 10, 3)
-inputs['Bathroom'] = st.sidebar.number_input("Bathrooms", 0, 10, 1)
-inputs['Car'] = st.sidebar.number_input("Car Spaces", 0, 10, 1)
-inputs['Distance'] = st.sidebar.number_input("Distance from City (km)", 0.0, 50.0, 10.0)
-inputs['Postcode'] = st.sidebar.number_input("Postcode", 1000, 3999, 3000)
-inputs['BuildingArea'] = st.sidebar.number_input("Building Area (m²)", 30, 1000, 150)
-inputs['YearBuilt'] = st.sidebar.number_input("Year Built", 1800, 2025, 2010)
-inputs['Propertycount'] = st.sidebar.number_input("Properties in Suburb", 100, 50000, 1000)
-
-# Include Landsize only if model expects it
-if "Landsize" in feature_names:
-    inputs['Landsize'] = st.sidebar.number_input("Land Size (m²)", 50, 2000, 500)
-
-# ------------------------------------------
-# Prediction Section
-# ------------------------------------------
-st.subheader("📈 House Price Prediction")
-
-def normalize_inputs(df):
-    """Clamp unrealistic values to prevent out-of-range errors."""
-    df['Distance'] = np.clip(df['Distance'], 0, 50)
-    df['BuildingArea'] = np.clip(df['BuildingArea'], 30, 1000)
-    if 'Landsize' in df:
-        df['Landsize'] = np.clip(df['Landsize'], 50, 2000)
-    df['Rooms'] = np.clip(df['Rooms'], 1, 10)
-    df['Bathroom'] = np.clip(df['Bathroom'], 0, 10)
-    df['Car'] = np.clip(df['Car'], 0, 10)
-    return df
-
-if st.button("Predict Price"):
-    df_input = pd.DataFrame([inputs])
-    df_input = normalize_inputs(df_input)
-
-    # Encode categorical features safely
-    for col, le in encoders.items():
-        if col in df_input:
-            try:
-                df_input[col] = le.transform(df_input[col].astype(str))
-            except:
-                st.warning(f"⚠️ '{df_input[col].values[0]}' not found in training data for '{col}'. Using default.")
-                df_input[col] = le.transform([le.classes_[0]])
-
-    df_input = df_input.reindex(columns=feature_names, fill_value=0)
-
+# parse size and total_sqft here (use same functions as train)
+def parse_bhk(x):
     try:
-        prediction = model.predict(df_input)[0]
+        if isinstance(x, str):
+            return int(x.split()[0])
+    except:
+        return np.nan
 
-        # If trained on log(price), apply exponential correction
-        if prediction < 0:
-            st.warning("⚠️ Raw model output was negative. Adjusting to realistic minimum.")
-            prediction = abs(prediction) * 0.75  # simple correction
+def parse_total_sqft(x):
+    try:
+        if isinstance(x, str):
+            x = x.strip()
+            if '-' in x:
+                a,b = x.split('-')
+                return (float(a)+float(b))/2.0
+            if x.replace('.', '', 1).isdigit():
+                return float(x)
+            nums = ''.join(ch if (ch.isdigit() or ch=='.' or ch=='-') else ' ' for ch in x).split()
+            if len(nums)>=1:
+                return float(nums[0])
+        elif isinstance(x,(int,float)):
+            return float(x)
+    except:
+        return np.nan
+    return np.nan
 
-        prediction = np.maximum(prediction, 50000)  # Ensure min threshold
-        st.success(f"💰 Estimated House Price: **₹ {prediction:,.2f}**")
+bhk = parse_bhk(size)
+total_sqft_num = parse_total_sqft(total_sqft)
 
-    except Exception as e:
-        st.error(f"Prediction failed: {e}")
+# Prepare input DataFrame
+input_df = pd.DataFrame([{
+    'total_sqft_num': total_sqft_num,
+    'bath': bath,
+    'balcony': balcony,
+    'bhk': bhk,
+    'area_type': area_type,
+    'location_clean': loc
+}])
 
-# ------------------------------------------
-# 💬 AI Chatbot Section
-# ------------------------------------------
-st.write("---")
-st.subheader("💬 AI Chatbot Assistant")
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-faq = {
-    "what is dss": "A Decision Support System helps make informed, data-driven decisions — here, it predicts house prices.",
-    "how prediction works": "The model processes your inputs, encodes categorical data, and estimates a house price using regression.",
-    "rooms": "Total number of rooms in the property.",
-    "bedroom2": "Number of bedrooms.",
-    "bathroom": "Number of bathrooms.",
-    "car": "Available parking spaces.",
-    "distance": "Distance from Melbourne’s Central Business District in kilometers.",
-    "landszie": "Land area in square meters.",
-    "buildingarea": "Total constructed floor area of the house.",
-    "yearbuilt": "The year the house was built.",
-    "suburb": "Local area or neighborhood of the property.",
-    "regionname": "Larger region grouping suburbs.",
-    "propertycount": "Number of properties in that suburb.",
-    "thank you": "You're welcome 😊",
-}
-
-def get_bot_response(query):
-    query = query.lower().strip()
-    for key, ans in faq.items():
-        if key in query:
-            return ans
-    if "price" in query:
-        return "The predicted price is based on rooms, building area, and location."
-    return "I’m not sure about that — try asking about a specific feature like 'rooms' or 'building area'."
-
-user_query = st.text_input("Ask your question about the model or dataset:", key="chat_input")
-
-if user_query:
-    response = get_bot_response(user_query)
-    st.session_state.chat_history.append({"sender": "user", "message": user_query})
-    st.session_state.chat_history.append({"sender": "bot", "message": response})
-
-for chat in st.session_state.chat_history:
-    if chat["sender"] == "user":
-        st.markdown(f"<div style='text-align:right; background-color:#1E3A8A; padding:8px; border-radius:10px; margin:5px; color:white;'>🧑‍💻 <b>You:</b> {chat['message']}</div>", unsafe_allow_html=True)
+# Predict button
+if st.button("Predict Price"):
+    # Basic validation
+    if pd.isna(total_sqft_num) or pd.isna(bhk):
+        st.error("Please enter valid 'size' and 'total_sqft' values (e.g., '2 BHK' and '1050').")
     else:
-        st.markdown(f"<div style='text-align:left; background-color:#3B0764; padding:8px; border-radius:10px; margin:5px; color:white;'>🤖 <b>Bot:</b> {chat['message']}</div>", unsafe_allow_html=True)
+        # clip unrealistic values
+        input_df['total_sqft_num'] = np.clip(input_df['total_sqft_num'], 300, 10000)
+        input_df['bhk'] = np.clip(input_df['bhk'], 1, 20)
 
-if st.button("🧹 Clear Chat"):
-    st.session_state.chat_history = []
+        # pipeline predicts log price, so convert back
+        pred_log = pipeline.predict(input_df)[0]
+        pred_price = np.expm1(pred_log)
+        pred_price = max(pred_price, 10000)  # safety floor
 
-# ------------------------------------------
-# Footer
-# ------------------------------------------
-st.markdown("---")
-st.caption("Developed as part of a Decision Support System project using Machine Learning and AI.")
+        st.success(f"Estimated Price: ₹ {pred_price:,.2f}")
+        st.info("Note: price shown in INR (original scale). This model was trained on Bengaluru dataset.")
+
+# Chatbot (brief)
+st.write("---")
+st.subheader("Chatbot")
+q = st.text_input("Ask about dataset or features:")
+if q:
+    q = q.lower()
+    if 'bhk' in q or 'size' in q:
+        st.write("BHK is extracted from size (e.g., '2 BHK' → 2).")
+    elif 'sqft' in q or 'total' in q:
+        st.write("Total sqft is parsed; ranges like '1000 - 1200' are averaged.")
+    else:
+        st.write("Try asking about 'bhk', 'sqft', 'location'.")
