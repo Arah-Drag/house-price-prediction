@@ -1,98 +1,135 @@
-# hp_app.py (updated to load pipeline_model.pkl)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import datetime
 
-# Load pipeline and location list
+# --------------------------------------------------------
+# Load Model and Metadata
+# --------------------------------------------------------
 try:
-    pipeline = joblib.load("pipeline_model.pkl")
-    top_locations = joblib.load("location_topk.pkl")
+    model = joblib.load("pipeline_model.pkl")
     feature_names = joblib.load("feature_names.pkl")
 except Exception as e:
-    st.error(f"Required files not found: {e}")
+    st.error(f"❌ Required files not found: {e}")
     st.stop()
 
+# Load dataset (for dropdown options)
+try:
+    dataset = pd.read_csv("Bengaluru_House_Data.csv")
+    dataset.columns = dataset.columns.str.strip().str.lower()
+except Exception as e:
+    st.warning(f"⚠️ Dataset not found for dropdown population: {e}")
+    dataset = pd.DataFrame()
+
+# --------------------------------------------------------
+# Page Setup
+# --------------------------------------------------------
 st.set_page_config(page_title="🏠 Bengaluru House Price DSS", layout="wide")
-st.title("🏠 Bengaluru House Price Prediction DSS")
+st.title("🏠 Bengaluru House Price Decision Support System")
+st.write("An AI-based tool to estimate property prices in Bengaluru using Machine Learning and interactive chatbot support.")
 
-# Sidebar inputs
-st.sidebar.header("Enter property details")
-# Use top_locations for dropdown
-loc = st.sidebar.selectbox("Location (area)", top_locations + ['other'])
-area_type = st.sidebar.selectbox("Area Type", ['Super built-up  Area','Built-up  Area','Carpet  Area','Plot  Area'])
-size = st.sidebar.text_input("Size (e.g. 2 BHK)", "2 BHK")
-total_sqft = st.sidebar.text_input("Total sqft (e.g. 1050 or 1050 - 1200)", "1050")
-bath = st.sidebar.number_input("Bath", min_value=0, max_value=10, value=2)
-balcony = st.sidebar.number_input("Balcony", min_value=0, max_value=5, value=1)
+st.sidebar.header("🧾 Enter Property Details")
 
-# parse size and total_sqft here (use same functions as train)
-def parse_bhk(x):
-    try:
-        if isinstance(x, str):
-            return int(x.split()[0])
-    except:
-        return np.nan
+# --------------------------------------------------------
+# Sidebar Inputs (based on dataset)
+# --------------------------------------------------------
+inputs = {}
 
-def parse_total_sqft(x):
-    try:
-        if isinstance(x, str):
-            x = x.strip()
-            if '-' in x:
-                a,b = x.split('-')
-                return (float(a)+float(b))/2.0
-            if x.replace('.', '', 1).isdigit():
-                return float(x)
-            nums = ''.join(ch if (ch.isdigit() or ch=='.' or ch=='-') else ' ' for ch in x).split()
-            if len(nums)>=1:
-                return float(nums[0])
-        elif isinstance(x,(int,float)):
-            return float(x)
-    except:
-        return np.nan
-    return np.nan
+inputs['total_sqft'] = st.sidebar.number_input("Total Square Feet", min_value=200.0, max_value=10000.0, value=1200.0, step=50.0)
+inputs['bath'] = st.sidebar.number_input("Number of Bathrooms", min_value=1, max_value=10, value=2)
+inputs['balcony'] = st.sidebar.number_input("Number of Balconies", min_value=0, max_value=5, value=1)
+inputs['size'] = st.sidebar.number_input("Number of Bedrooms (BHK)", min_value=1, max_value=10, value=2)
 
-bhk = parse_bhk(size)
-total_sqft_num = parse_total_sqft(total_sqft)
+if not dataset.empty:
+    inputs['location'] = st.sidebar.selectbox("📍 Location", sorted(dataset['location'].dropna().unique().tolist()))
+    inputs['area_type'] = st.sidebar.selectbox("🏢 Area Type", sorted(dataset['area_type'].dropna().unique().tolist()))
+    inputs['availability'] = st.sidebar.selectbox("📅 Availability", sorted(dataset['availability'].dropna().unique().tolist()))
+else:
+    inputs['location'] = st.sidebar.text_input("📍 Location", "Whitefield")
+    inputs['area_type'] = st.sidebar.text_input("🏢 Area Type", "Super built-up  Area")
+    inputs['availability'] = st.sidebar.text_input("📅 Availability", "Ready To Move")
 
-# Prepare input DataFrame
-input_df = pd.DataFrame([{
-    'total_sqft_num': total_sqft_num,
-    'bath': bath,
-    'balcony': balcony,
-    'bhk': bhk,
-    'area_type': area_type,
-    'location_clean': loc
-}])
+# --------------------------------------------------------
+# Prediction Section
+# --------------------------------------------------------
+st.subheader("📈 Predict House Price")
 
-# Predict button
 if st.button("Predict Price"):
-    # Basic validation
-    if pd.isna(total_sqft_num) or pd.isna(bhk):
-        st.error("Please enter valid 'size' and 'total_sqft' values (e.g., '2 BHK' and '1050').")
-    else:
-        # clip unrealistic values
-        input_df['total_sqft_num'] = np.clip(input_df['total_sqft_num'], 300, 10000)
-        input_df['bhk'] = np.clip(input_df['bhk'], 1, 20)
+    df_input = pd.DataFrame([inputs])
 
-        # pipeline predicts log price, so convert back
-        pred_log = pipeline.predict(input_df)[0]
-        pred_price = np.expm1(pred_log)
-        pred_price = max(pred_price, 10000)  # safety floor
+    try:
+        prediction = model.predict(df_input)[0]
+        st.success(f"💰 Estimated Price: ₹ **{prediction * 1e5:,.2f}**")  # price is in lakhs
+    except Exception as e:
+        st.error(f"Prediction failed: {e}")
 
-        st.success(f"Estimated Price: ₹ {pred_price:,.2f}")
-        st.info("Note: price shown in INR (original scale). This model was trained on Bengaluru dataset.")
-
-# Chatbot (brief)
+# --------------------------------------------------------
+# 💬 Chatbot Section
+# --------------------------------------------------------
 st.write("---")
-st.subheader("Chatbot")
-q = st.text_input("Ask about dataset or features:")
-if q:
-    q = q.lower()
-    if 'bhk' in q or 'size' in q:
-        st.write("BHK is extracted from size (e.g., '2 BHK' → 2).")
-    elif 'sqft' in q or 'total' in q:
-        st.write("Total sqft is parsed; ranges like '1000 - 1200' are averaged.")
+st.subheader("💬 AI Chatbot Assistant")
+
+# Initialize chat history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+faq = {
+    "what is dss": "A Decision Support System (DSS) helps users make better data-driven decisions. Here, it predicts house prices for Bengaluru.",
+    "what model is used": "We use a Linear Regression model trained on Bengaluru housing data.",
+    "what dataset is used": "The dataset is Bengaluru_House_Data.csv containing details like size, bath, location, area type, and availability.",
+    "what is total_sqft": "Total_sqft means the total built-up area of the property in square feet.",
+    "what is bath": "Number of bathrooms in the property.",
+    "what is balcony": "Number of balconies in the property.",
+    "what is size": "Size represents the number of bedrooms (BHK).",
+    "what is location": "Location specifies where the house is situated — e.g., Whitefield, Hebbal, etc.",
+    "what is area_type": "Area type indicates if it's a super built-up area, carpet area, etc.",
+    "what is availability": "Availability shows whether the house is ready to move or under construction.",
+    "how prediction works": "The model processes your input through preprocessing and regression pipeline to estimate the house price.",
+    "developer": "This DSS was developed by Arasu as part of an academic project.",
+    "thank you": "You're welcome! 😊",
+}
+
+# Function to get chatbot response
+def get_bot_response(query):
+    query = query.lower().strip()
+    for key, answer in faq.items():
+        if key in query:
+            return answer
+
+    if "price" in query:
+        return "The price prediction is made using a trained linear regression model."
+    elif "dataset" in query:
+        return "The dataset contains house listings from Bengaluru with features like sqft, BHK, bath, etc."
+    elif "feature" in query:
+        return "The key features are total_sqft, size (BHK), bath, balcony, location, area_type, and availability."
     else:
-        st.write("Try asking about 'bhk', 'sqft', 'location'.")
+        return "I'm not sure about that. Try asking about a specific feature like 'total_sqft' or 'area_type'."
+
+# User input box
+user_query = st.text_input("Ask your question about the model or dataset:", key="chat_input")
+
+if user_query:
+    response = get_bot_response(user_query)
+    st.session_state.chat_history.append({"sender": "user", "message": user_query, "time": datetime.datetime.now().strftime("%H:%M:%S")})
+    st.session_state.chat_history.append({"sender": "bot", "message": response, "time": datetime.datetime.now().strftime("%H:%M:%S")})
+
+# Display chat history
+for chat in st.session_state.chat_history:
+    if chat["sender"] == "user":
+        st.markdown(
+            f"<div style='text-align:right; background-color:#1E3A8A; padding:8px; border-radius:10px; margin:5px; color:white;'>🧑‍💻 <b>You:</b> {chat['message']}<br><small>{chat['time']}</small></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"<div style='text-align:left; background-color:#3B0764; padding:8px; border-radius:10px; margin:5px; color:white;'>🤖 <b>Bot:</b> {chat['message']}<br><small>{chat['time']}</small></div>",
+            unsafe_allow_html=True,
+        )
+
+# Clear chat
+if st.button("🧹 Clear Chat"):
+    st.session_state.chat_history = []
+
+st.markdown("---")
+st.caption("Developed as part of an M.Sc. DSS project using Machine Learning and AI 🤖")
