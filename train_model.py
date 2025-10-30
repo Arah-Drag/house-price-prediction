@@ -10,7 +10,7 @@ import joblib
 # -------------------------------------------------------
 # 1️⃣ Load and Clean Data
 # -------------------------------------------------------
-df = pd.read_csv("Bengaluru_House_Data.csv")
+df = pd.read_csv("Cleaned_Bengaluru_House_Data.csv")
 
 # Drop rows with missing key values
 df = df.dropna(subset=["size", "total_sqft", "bath", "price", "location"])
