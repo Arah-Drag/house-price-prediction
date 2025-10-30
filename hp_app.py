@@ -38,11 +38,7 @@ inputs = {
     "location": location,
     "total_sqft": total_sqft,
     "bath": bath,
-    "BHK": bhk,
-    "Area Type": area_type,
-    "Availability": availability,
-    "Size": size,
-    "Society": society 
+    "BHK": bhk
 }
 
 # -------------------------------------------------------

@@ -8,76 +8,75 @@ from sklearn.metrics import r2_score, mean_absolute_error
 import joblib
 
 # -------------------------------------------------------
-# 1️⃣ Load and Clean Data
+# Load and clean dataset
 # -------------------------------------------------------
 df = pd.read_csv("Cleaned_Bengaluru_House_Data.csv")
-
-# Drop rows with missing key values
 df = df.dropna(subset=["size", "total_sqft", "bath", "price", "location"])
 
-# Extract BHK from size
-df["BHK"] = df["size"].apply(lambda x: int(x.split(' ')[0]) if isinstance(x, str) else 0)
+# Extract BHK
+df["BHK"] = df["size"].apply(lambda x: int(x.split(" ")[0]) if isinstance(x, str) else 0)
 
-# Convert total_sqft — handle ranges like "2100-2850"
+# Convert total_sqft to numeric (handle ranges and text)
 def convert_sqft(x):
     try:
-        if '-' in str(x):
-            a, b = x.split('-')
+        x = str(x).lower().replace("sq. meter", "").replace("acres", "").replace("cent", "").replace("perch", "")
+        if "-" in x:
+            a, b = x.split("-")
             return (float(a) + float(b)) / 2
-        else:
-            return float(x)
+        return float(x)
     except:
         return np.nan
 
 df["total_sqft"] = df["total_sqft"].apply(convert_sqft)
 df = df.dropna(subset=["total_sqft"])
 
-# Clean location values
+# Remove outliers based on price per sqft
+df["price_per_sqft"] = (df["price"] * 100000) / df["total_sqft"]
+df = df[(df["price_per_sqft"] > 2000) & (df["price_per_sqft"] < 20000)]
+
+# Simplify location
 df["location"] = df["location"].apply(lambda x: x.strip())
 location_stats = df["location"].value_counts()
-location_stats_less_than_10 = location_stats[location_stats <= 10]
-df["location"] = df["location"].apply(lambda x: "other" if x in location_stats_less_than_10 else x)
+df["location"] = df["location"].apply(lambda x: "other" if location_stats[x] <= 10 else x)
 
-# Encode locations
+# Encode location
 le = LabelEncoder()
 df["location"] = le.fit_transform(df["location"])
 
 # -------------------------------------------------------
-# 2️⃣ Feature Selection
+# Feature selection
 # -------------------------------------------------------
 X = df[["location", "total_sqft", "bath", "BHK"]]
 y = df["price"]
 
 # -------------------------------------------------------
-# 3️⃣ Split and Train RandomForest
+# Split and train
 # -------------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-rf = RandomForestRegressor(
+model = RandomForestRegressor(
     n_estimators=300,
     random_state=42,
-    max_depth=15,
-    min_samples_split=5,
+    max_depth=18,
+    min_samples_split=4,
     min_samples_leaf=2
 )
-
-rf.fit(X_train, y_train)
+model.fit(X_train, y_train)
 
 # -------------------------------------------------------
-# 4️⃣ Evaluate Model
+# Evaluate
 # -------------------------------------------------------
-y_pred = rf.predict(X_test)
+y_pred = model.predict(X_test)
 r2 = r2_score(y_test, y_pred)
 mae = mean_absolute_error(y_test, y_pred)
 
-print("✅ Random Forest Model Trained Successfully!")
+print("✅ Model Trained Successfully!")
 print(f"📈 R² Score: {r2:.3f}")
-print(f"📉 Mean Absolute Error: {mae:.3f} Lakhs")
+print(f"📉 MAE: {mae:.2f} lakhs")
 
 # -------------------------------------------------------
-# 5️⃣ Save Model and Encoder
+# Save model
 # -------------------------------------------------------
-joblib.dump(rf, "pipeline_model.pkl")
+joblib.dump(model, "pipeline_model.pkl")
 joblib.dump(le, "label_encoder.pkl")
-
-print("\n🎯 Files saved: pipeline_model.pkl and label_encoder.pkl")
+print("🎯 Files saved successfully!")
