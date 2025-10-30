@@ -28,8 +28,8 @@ except Exception as e:
 # -------------------------------------------------------
 # Page Configuration
 # -------------------------------------------------------
-st.set_page_config(page_title="🏠 Bengaluru House Price DSS", layout="wide")
-st.title("🏠 Bengaluru House Price Prediction DSS")
+st.set_page_config(page_title="🏠 House Price DSS", layout="wide")
+st.title("🏠 House Price Prediction DSS")
 st.write("An AI-powered Decision Support System (DSS) using Random Forest to forecast house prices in Bengaluru with explainable insights.")
 
 # -------------------------------------------------------
