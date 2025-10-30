@@ -1,100 +1,83 @@
+# train_model.py
 import pandas as pd
 import numpy as np
-import joblib
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_absolute_error
+import joblib
 
-# --------------------------------------
-# Load dataset
-# --------------------------------------
-data = pd.read_csv("Bengaluru_House_Data.csv")
+# -------------------------------------------------------
+# 1️⃣ Load and Clean Data
+# -------------------------------------------------------
+df = pd.read_csv("Bengaluru_House_Data.csv")
 
-# Clean column names
-data.columns = data.columns.str.strip().str.lower()
+# Drop rows with missing key values
+df = df.dropna(subset=["size", "total_sqft", "bath", "price", "location"])
 
-# Drop duplicates and missing prices
-data = data.drop_duplicates()
-data = data.dropna(subset=['price'])
+# Extract BHK from size
+df["BHK"] = df["size"].apply(lambda x: int(x.split(' ')[0]) if isinstance(x, str) else 0)
 
-# Extract numeric and categorical columns
-categorical_cols = ['location', 'area_type', 'availability']
-numerical_cols = ['bath', 'balcony', 'size']
-
-# Convert 'size' (e.g., "2 BHK") to numeric
-def extract_bhk(x):
-    try:
-        return int(x.split()[0])
-    except:
-        return np.nan
-
-data['size'] = data['size'].apply(extract_bhk)
-
-# Drop rows with invalid values
-data = data.dropna(subset=['size', 'bath', 'balcony'])
-
-# Convert total_sqft to numeric (handles ranges like "1200-1500")
+# Convert total_sqft — handle ranges like "2100-2850"
 def convert_sqft(x):
     try:
         if '-' in str(x):
-            low, high = map(float, x.split('-'))
-            return (low + high) / 2
+            a, b = x.split('-')
+            return (float(a) + float(b)) / 2
         else:
             return float(x)
     except:
         return np.nan
 
-data['total_sqft'] = data['total_sqft'].apply(convert_sqft)
-data = data.dropna(subset=['total_sqft'])
+df["total_sqft"] = df["total_sqft"].apply(convert_sqft)
+df = df.dropna(subset=["total_sqft"])
 
-# Target variable
-y = data['price']
-X = data[['total_sqft', 'bath', 'balcony', 'size', 'location', 'area_type', 'availability']]
+# Clean location values
+df["location"] = df["location"].apply(lambda x: x.strip())
+location_stats = df["location"].value_counts()
+location_stats_less_than_10 = location_stats[location_stats <= 10]
+df["location"] = df["location"].apply(lambda x: "other" if x in location_stats_less_than_10 else x)
 
-# --------------------------------------
-# Preprocessing
-# --------------------------------------
-categorical_transformer = OneHotEncoder(handle_unknown='ignore')
-numeric_transformer = StandardScaler()
+# Encode locations
+le = LabelEncoder()
+df["location"] = le.fit_transform(df["location"])
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', numeric_transformer, ['total_sqft', 'bath', 'balcony', 'size']),
-        ('cat', categorical_transformer, ['location', 'area_type', 'availability'])
-    ]
-)
+# -------------------------------------------------------
+# 2️⃣ Feature Selection
+# -------------------------------------------------------
+X = df[["location", "total_sqft", "bath", "BHK"]]
+y = df["price"]
 
-# --------------------------------------
-# Build and Train Pipeline
-# --------------------------------------
-model = Pipeline(steps=[
-    ('preprocessor', preprocessor),
-    ('regressor', LinearRegression())
-])
-
+# -------------------------------------------------------
+# 3️⃣ Split and Train RandomForest
+# -------------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-model.fit(X_train, y_train)
+rf = RandomForestRegressor(
+    n_estimators=300,
+    random_state=42,
+    max_depth=15,
+    min_samples_split=5,
+    min_samples_leaf=2
+)
 
-# --------------------------------------
-# Evaluate Model
-# --------------------------------------
-y_pred = model.predict(X_test)
-mae = mean_absolute_error(y_test, y_pred)
+rf.fit(X_train, y_train)
+
+# -------------------------------------------------------
+# 4️⃣ Evaluate Model
+# -------------------------------------------------------
+y_pred = rf.predict(X_test)
 r2 = r2_score(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
 
-print(f"✅ Model trained successfully!")
-print(f"Mean Absolute Error: {mae:.2f}")
-print(f"R² Score: {r2:.3f}")
+print("✅ Random Forest Model Trained Successfully!")
+print(f"📈 R² Score: {r2:.3f}")
+print(f"📉 Mean Absolute Error: {mae:.3f} Lakhs")
 
-# --------------------------------------
-# Save Model and Metadata
-# --------------------------------------
-joblib.dump(model, "pipeline_model.pkl")
-joblib.dump(list(X.columns), "feature_names.pkl")
+# -------------------------------------------------------
+# 5️⃣ Save Model and Encoder
+# -------------------------------------------------------
+joblib.dump(rf, "pipeline_model.pkl")
+joblib.dump(le, "label_encoder.pkl")
 
-print("🎯 Model and feature names saved successfully.")
+print("\n🎯 Files saved: pipeline_model.pkl and label_encoder.pkl")
