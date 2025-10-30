@@ -2,11 +2,10 @@
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import r2_score
 
 # -------------------------------------------------------
@@ -14,22 +13,22 @@ from sklearn.metrics import r2_score
 # -------------------------------------------------------
 df = pd.read_csv("Bengaluru_House_Data.csv")
 
-# Remove rows with any missing values
+# Drop rows with missing values in key columns
 df = df.dropna(subset=["area_type", "society", "location", "total_sqft", "bath", "balcony", "BHK", "price"])
 
 # -------------------------------------------------------
-# Feature & Target Selection
+# Features & Target
 # -------------------------------------------------------
 X = df[["area_type", "society", "location", "total_sqft", "bath", "balcony", "BHK"]]
 y = df["price"]
 
 # -------------------------------------------------------
-# Split Data
+# Train-Test Split
 # -------------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # -------------------------------------------------------
-# Preprocessing: OneHotEncode categorical columns
+# Preprocessing (OneHotEncoder for categorical)
 # -------------------------------------------------------
 categorical_features = ["area_type", "society", "location"]
 numeric_features = ["total_sqft", "bath", "balcony", "BHK"]
@@ -42,7 +41,12 @@ preprocessor = ColumnTransformer([
 # -------------------------------------------------------
 # Model: Random Forest
 # -------------------------------------------------------
-model = RandomForestRegressor(n_estimators=200, random_state=42)
+model = RandomForestRegressor(
+    n_estimators=300,
+    max_depth=20,
+    random_state=42,
+    n_jobs=-1
+)
 
 # -------------------------------------------------------
 # Pipeline
@@ -53,19 +57,19 @@ pipeline = Pipeline([
 ])
 
 # -------------------------------------------------------
-# Train the Model
+# Train Model
 # -------------------------------------------------------
 pipeline.fit(X_train, y_train)
 
 # -------------------------------------------------------
-# Evaluate the Model
+# Evaluate
 # -------------------------------------------------------
 y_pred = pipeline.predict(X_test)
 score = r2_score(y_test, y_pred)
-print(f"✅ Model R² Accuracy: {score * 100:.2f}%")
+print(f"✅ Model Trained Successfully | Accuracy (R²): {score * 100:.2f}%")
 
 # -------------------------------------------------------
-# Save the Model
+# Save Model
 # -------------------------------------------------------
 joblib.dump(pipeline, "pipeline_model.pkl")
 print("💾 Model saved as pipeline_model.pkl")
